@@ -2,6 +2,7 @@
 
 namespace Chypriote\UniqueNames;
 
+use InvalidArgumentException;
 use RuntimeException;
 
 class Generator
@@ -9,80 +10,202 @@ class Generator
     public const DICTIONARY_ADJECTIVES = 'adjectives';
     public const DICTIONARY_ANIMALS = 'animals';
     public const DICTIONARY_COLORS = 'colors';
-    public const DICTIONARY_COUNTRIES = 'countries';
     public const DICTIONARY_NAMES = 'names';
-    public const DICTIONARY_STAR_WARS = 'star-wars';
     public const DICTIONARY_LANGUAGES = 'languages';
+
+    public const MAX_ATTEMPT = 10000;
+
+    public const MAX_SKIPS = 1000;
 
     public const AVAILABLE_DICTIONARIES = [
         self::DICTIONARY_ADJECTIVES,
         self::DICTIONARY_ANIMALS,
         self::DICTIONARY_COLORS,
-        self::DICTIONARY_COUNTRIES,
         self::DICTIONARY_NAMES,
-        self::DICTIONARY_STAR_WARS,
         self::DICTIONARY_LANGUAGES,
     ];
 
-    private array $dictionaries = ['adjectives', 'animals'];
+    private array $dictionaries = [
+        ['adjectives', 'languages', 'colors'],
+        ['adjectives', 'languages', 'colors'],
+        'animals',
+        'names',
+    ];
 
-    private array $resources = [];
+    private ?array $pools = null;
 
     private ?string $separator = null;
 
-    private int $length = 2;
-
-    private ?int $seed = null;
-
-    private bool $shuffle = false;
-
-    public function generate(): string
+    public function generate(int|string|null $id = null, int $attempt = 0): string
     {
-        $this->validateConfig();
+        if ($attempt < 0) {
+            throw new InvalidArgumentException('Attempt cannot be negative.');
+        }
 
-        if ($this->shuffle) {shuffle($this->dictionaries);}
-        $this->loadResources();
+        if ($attempt > self::MAX_ATTEMPT) {
+            throw new RuntimeException(sprintf('Attempt is limited to %d.', self::MAX_ATTEMPT));
+        }
 
-        return array_reduce(array_slice($this->resources, 0, $this->length), function (string $acc, array $curr) {
-            $rnd = mt_rand(0, count($curr) - 1);
-            $word = ucfirst($curr[$rnd]);
+        $pools = $this->pools();
+        $size = $this->getSpaceSize();
 
-            return $acc !== '' ? $acc.$this->separator.$word : $word;
-        }, '');
+        $hash = hash('sha256', $this->key($id), true);
+        $index = $this->readIndex(substr($hash, 0, 8)) % $size;
+
+        if ($size === 1) {
+            $name = $this->compose($pools, 0);
+
+            if ($name === null) {
+                throw new RuntimeException('Cannot build a name without repeating a word.');
+            }
+
+            if ($attempt > 0) {
+                throw new RuntimeException('The name space is exhausted: it holds a single name.');
+            }
+
+            return $name;
+        }
+
+        $step = $this->step(substr($hash, 8, 8), $size);
+        $found = 0;
+        $skipped = 0;
+
+        for ($visited = 0; $visited < $size; $visited++) {
+            $name = $this->compose($pools, $index);
+
+            if ($name !== null) {
+                if ($found === $attempt) {
+                    return $name;
+                }
+
+                $found++;
+                $skipped = 0;
+            } elseif (++$skipped > self::MAX_SKIPS) {
+                throw new RuntimeException('Cannot build a name without repeating a word.');
+            }
+
+            $index = ($index + $step) % $size;
+        }
+
+        throw new RuntimeException(
+            sprintf('The name space is exhausted: it holds fewer than %d usable names.', $attempt + 1)
+        );
     }
 
-    private function validateConfig(): void
+    private function step(string $bytes, int $size): int
     {
-        $numberOfDictionaries = count($this->dictionaries);
+        $step = 1 + ($this->readIndex($bytes) % ($size - 1));
 
-        if (!$numberOfDictionaries) {
-            throw new RuntimeException('Cannot find any dictionary. Please provide at least one, or leave the "dictionary" field empty in the config object');
+        while ($this->gcd($step, $size) !== 1) {
+            $step = $step + 1 >= $size ? 1 : $step + 1;
         }
 
-        if ($this->length <= 0) {
-            throw new RuntimeException('Invalid length provided');
+        return $step;
+    }
+
+    private function gcd(int $a, int $b): int
+    {
+        while ($b !== 0) {
+            [$a, $b] = [$b, $a % $b];
         }
 
-        if ($this->length > $numberOfDictionaries) {
-            throw new RuntimeException(
-                sprintf('The length cannot be bigger than the number of dictionaries.\n Length provided: %d. Number of dictionaries provided: %d', $this->length, $numberOfDictionaries)
-            );
+        return $a;
+    }
+
+    private function key(int|string|null $id): string
+    {
+        if ($id === null) {
+            return 'r:'.random_bytes(16);
         }
 
-        foreach ($this->dictionaries as $dictionary) {
-            if (!in_array($dictionary, self::AVAILABLE_DICTIONARIES, true)) {
+        return (is_int($id) ? 'i:' : 's:').$id;
+    }
+
+    private function readIndex(string $bytes): int
+    {
+        return unpack('J', $bytes)[1] & PHP_INT_MAX;
+    }
+
+    private function compose(array $pools, int $index): ?string
+    {
+        $words = [];
+        $seen = [];
+        $rest = $index;
+
+        foreach ($pools as $pool) {
+            $count = count($pool);
+            $word = $pool[$rest % $count];
+
+            if (isset($seen[$word])) {
+                return null;
+            }
+
+            $seen[$word] = true;
+            $words[] = ucfirst($word);
+            $rest = intdiv($rest, $count);
+        }
+
+        return implode((string) $this->separator, $words);
+    }
+
+    private function pools(): array
+    {
+        if ($this->pools !== null) {
+            return $this->pools;
+        }
+
+        if (!$this->dictionaries) {
+            throw new RuntimeException('Cannot find any dictionary. Please provide at least one position.');
+        }
+
+        $pools = [];
+
+        foreach ($this->dictionaries as $position) {
+            $names = is_array($position) ? $position : [$position];
+
+            if (!$names) {
+                throw new RuntimeException('Cannot build a name from an empty position.');
+            }
+
+            $words = [];
+
+            foreach ($names as $name) {
+                if (!in_array($name, self::AVAILABLE_DICTIONARIES, true)) {
+                    throw new RuntimeException(
+                        sprintf(
+                            'The dictionary %s could not be found. Available dictionaries: %s',
+                            $name,
+                            implode(', ', self::AVAILABLE_DICTIONARIES)
+                        )
+                    );
+                }
+
+                $words = array_merge($words, include __DIR__.'/dictionaries/'.$name.'.php');
+            }
+
+            $pools[] = array_values(array_unique($words));
+        }
+
+        return $this->pools = $pools;
+    }
+
+    public function getSpaceSize(): int
+    {
+        $size = 1;
+
+        foreach ($this->pools() as $position => $pool) {
+            $count = count($pool);
+
+            if ($size > intdiv(PHP_INT_MAX, $count)) {
                 throw new RuntimeException(
-                    sprintf('The dictionary %s could not be found. Available dictionaries: %s', $dictionary, json_encode(self::AVAILABLE_DICTIONARIES, JSON_THROW_ON_ERROR))
+                    sprintf('The name space exceeds PHP_INT_MAX at position %d. Use fewer positions.', $position + 1)
                 );
             }
-        }
-    }
 
-    private function loadResources(): void
-    {
-        foreach ($this->dictionaries as $key => $dictionary) {
-            $this->resources[$key] = include __DIR__.'/dictionaries/'.$dictionary.'.php';
+            $size *= $count;
         }
+
+        return $size;
     }
 
     public function getDictionaries(): array
@@ -93,6 +216,7 @@ class Generator
     public function setDictionaries(array $dictionaries): self
     {
         $this->dictionaries = $dictionaries;
+        $this->pools = null;
 
         return $this;
     }
@@ -100,6 +224,7 @@ class Generator
     public function addDictionary(string $dictionary): self
     {
         $this->dictionaries[] = $dictionary;
+        $this->pools = null;
 
         return $this;
     }
@@ -107,40 +232,6 @@ class Generator
     public function setSeparator(?string $separator): self
     {
         $this->separator = $separator;
-
-        return $this;
-    }
-
-    public function setLength(int $length): self
-    {
-        $this->length = $length;
-
-        return $this;
-    }
-
-    public function setShuffle(bool $shuffle): self
-    {
-        $this->shuffle = $shuffle;
-
-        return $this;
-    }
-
-    public function setSeed($seed): self
-    {
-        if (is_string($seed)) {
-            return $this->setSeedFromString($seed);
-        }
-
-        $this->seed = $seed;
-        mt_srand($this->seed);
-
-        return $this;
-    }
-
-    public function setSeedFromString(string $seed): self
-    {
-        $this->seed = crc32($seed);
-        mt_srand($this->seed);
 
         return $this;
     }

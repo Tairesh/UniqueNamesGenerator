@@ -1,6 +1,6 @@
 {
-    "name": "chypriote/unique-names-generator",
-    "description": "A package to create readable, meaningful, random strings from animal names, colors and adjectives.",
+    "name": "tairesh/unique-names-generator",
+    "description": "Deterministic readable names derived from any key, with guaranteed-distinct retries.",
     "keywords": [
         "random",
         "name",
@@ -14,12 +14,17 @@
     "license": "MIT",
     "authors": [
         {
+            "name": "Ilia Agafonov",
+            "email": "tairesh.rus@gmail.com"
+        },
+        {
             "name": "Nicolas",
-            "email": "chypriote@lolpros.gg"
+            "email": "chypriote@lolpros.gg",
+            "role": "Author of the original package"
         }
     ],
     "require": {
-        "php": ">=7.4",
+        "php": ">=8.1",
         "ext-json": "*"
     },
     "require-dev": {
