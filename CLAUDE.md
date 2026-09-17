@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`chypriote/unique-names-generator` — a zero-dependency PHP library (PHP >= 7.4) that builds readable random
-names such as `PlannedRhinoceros` by picking one word from each configured dictionary.
+`tairesh/unique-names-generator` — a zero-dependency PHP library (PHP >= 8.1) that maps a key to a readable
+name such as `TotalSecureMothDorris`. A fork of `chypriote/UniqueNamesGenerator` with an incompatible API;
+released to Packagist by pushing a tag (a webhook updates the package).
 
 ## Commands
 
@@ -14,19 +15,45 @@ Everything runs inside Docker — PHP, Composer and PHPUnit are not installed on
 
 ```bash
 just                                              # full suite
-just filter generator_can_shuffle_dictionaries    # single test
+just filter testANameNeverRepeatsAWord            # single test (pattern is a regex; `|` works, it is quoted)
 just test tests/GeneratorTest.php                 # single file (extra args pass through to phpunit)
 just shell                                        # shell inside the container
 just build                                        # build the image
 just rebuild                                      # reset the vendor volume + rebuild, after composer.json changes
+just check                                        # the gate: fixer + stan + phpmd + full suite
+just fixer                                        # PHP CS Fixer — rewrites files in place
+just stan                                         # PHPStan
+just phpmd                                        # PHPMD
+just lint                                         # stan + phpmd, no rewriting
 ```
+
+The container runs **PHP 8.1** — the floor declared in `composer.json`, so the fixer can never rewrite the
+code into syntax the published package cannot parse. Newer runtimes are covered by the CI matrix (8.1 to 8.5)
+in `.github/workflows/ci.yml`, not locally.
+
+There is no `composer.lock` (gitignored, as for any library), so every CI leg resolves dependencies afresh.
+A broken upstream release turns CI red with no change on this side, and `just check` will not reproduce it
+until `just rebuild` re-seeds the vendor volume.
 
 `compose.yaml` bind-mounts the source and keeps `vendor/` in a named volume, so dependencies never land on the
 host and the container runs as uid/gid 1000. Because a named volume is only seeded from the image the first
 time it is created, changing `composer.json` requires `just rebuild` — a plain `just build` leaves the old
 dependencies in place. The empty root-owned `vendor/` directory on the host is just Docker's mount point.
 
-There is no linter or static analyser configured. Formatting follows `.editorconfig` (4 spaces, LF, final newline).
+`just rebuild` runs `docker compose rm -fsv` before `down -v` for a reason: a `docker compose run` killed by a
+broken pipe (piping its output into `head`, for instance) leaves a container in `Created` state, and `down -v`
+then declines to drop the volume with `Resource is still in use` — without failing. The rebuild appears to
+succeed while the old `vendor/` survives.
+
+`just check` is the whole verification gate — there is no Makefile. It runs PHP CS Fixer (`@Symfony` plus
+`php_unit_test_annotation` in `prefix` style), PHPStan at `level: max` with the strict and deprecation rule
+sets, PHPMD against `phpmd_ruleset.xml`, then PHPUnit. The three configs are ported from `../core`, minus its
+Symfony/Doctrine PHPStan extensions and its separate coupling ruleset. Formatting otherwise follows
+`.editorconfig` (4 spaces, LF, final newline).
+
+`@Symfony` is opinionated in ways worth knowing before writing code: Yoda conditions (`1 === $size`), a
+leading `\` on global classes instead of a `use` statement, and pre-increment. Write it that way or the
+fixer will.
 
 ## Architecture
 
@@ -37,6 +64,9 @@ the hash picks a point in the space of all possible names. Two moving parts only
   `addDictionary`, `setSeparator`) plus `generate()` and `getSpaceSize()`.
 - `src/dictionaries/*.php` — each file `return`s a flat array of unique lowercase strings, loaded lazily via
   `include` in `pools()`.
+
+The reasoning behind this design — the collision arithmetic, and why a full-cycle walk rather than a second
+random draw — is in `docs/superpowers/specs/2026-09-17-deterministic-unique-names-design.md`.
 
 How a name is built:
 
@@ -54,6 +84,7 @@ How a name is built:
   `attempt = i` means the i-th *acceptable* element of the sequence. Skipping preserves the uniqueness
   guarantee because the filter only removes elements.
 - **Type is part of the key**: `generate(42)` and `generate('42')` hash differently by design.
+  A `null` key is replaced by `random_bytes(16)` — the one non-deterministic path in the library.
 - `readIndex()` masks the sign bit with `& PHP_INT_MAX` — PHP ints are signed, so the top bit of the hash
   would otherwise produce a negative index.
 
@@ -65,6 +96,9 @@ Things that are easy to get wrong:
   straight from the name.
 - **Dictionaries must stay lowercase and duplicate-free.** Duplicates shrink the space and break the
   no-repeated-word rule (`English` and `english` would not compare equal); a test enforces this.
+- **Editing a dictionary silently invalidates `README.md`.** The tests assert properties, not counts, so
+  nothing fails — but the per-dictionary word counts and the 3.1·10¹² figure in the README are stale from
+  that moment on. Re-read them off `getSpaceSize()` after any dictionary change.
 - `getSpaceSize()` guards every multiplication against `PHP_INT_MAX` — with the default pools, seven
   positions already overflow.
 - The `MAX_SKIPS` and `N == 1` error branches cannot be reached with the shipped dictionaries; they guard
@@ -72,9 +106,13 @@ Things that are easy to get wrong:
 - The default space is 3.1·10¹² names, so ~50 million entities still collide about 400 times. Callers are
   expected to catch a unique-index violation and retry with `attempt + 1`.
 - Walking the sequence is linear in `attempt`, which is why tests cap attempt loops in the low thousands.
+- **`include` returns `mixed`.** Every dictionary load carries a `/** @var list<string> */` annotation — drop
+  it and PHPStan level max fails on the array operations downstream.
 
 ## Tests
 
-`tests/GeneratorTest.php` is the whole suite. Tests are discovered through the `/** @test */` annotation
-(not `test` prefixes, not PHP attributes) — follow that convention for new cases. `phpunit.xml` sets
-`failOnRisky`/`failOnWarning` and restricts deprecations/notices, so warnings fail the build.
+`tests/GeneratorTest.php` is the whole suite. Tests are discovered by the `test` method prefix — the fixer
+rewrites `/** @test */` annotations into that form, so do not add them. Level max additionally requires
+`: void` on every test method and `self::assert*` rather than `$this->assert*`; the fixer will not add those
+for you. `phpunit.xml` sets `failOnRisky`/`failOnWarning` and restricts deprecations/notices, so warnings
+fail the build.

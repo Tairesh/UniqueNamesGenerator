@@ -1,9 +1,6 @@
 <?php
 
-namespace Chypriote\UniqueNames;
-
-use InvalidArgumentException;
-use RuntimeException;
+namespace Tairesh\UniqueNames;
 
 class Generator
 {
@@ -25,6 +22,7 @@ class Generator
         self::DICTIONARY_LANGUAGES,
     ];
 
+    /** @var list<string|list<string>> */
     private array $dictionaries = [
         ['adjectives', 'languages', 'colors'],
         ['adjectives', 'languages', 'colors'],
@@ -32,6 +30,7 @@ class Generator
         'names',
     ];
 
+    /** @var list<list<string>>|null */
     private ?array $pools = null;
 
     private ?string $separator = null;
@@ -39,11 +38,11 @@ class Generator
     public function generate(int|string|null $id = null, int $attempt = 0): string
     {
         if ($attempt < 0) {
-            throw new InvalidArgumentException('Attempt cannot be negative.');
+            throw new \InvalidArgumentException('Attempt cannot be negative.');
         }
 
         if ($attempt > self::MAX_ATTEMPT) {
-            throw new RuntimeException(sprintf('Attempt is limited to %d.', self::MAX_ATTEMPT));
+            throw new \RuntimeException(sprintf('Attempt is limited to %d.', self::MAX_ATTEMPT));
         }
 
         $pools = $this->pools();
@@ -52,15 +51,15 @@ class Generator
         $hash = hash('sha256', $this->key($id), true);
         $index = $this->readIndex(substr($hash, 0, 8)) % $size;
 
-        if ($size === 1) {
+        if (1 === $size) {
             $name = $this->compose($pools, 0);
 
-            if ($name === null) {
-                throw new RuntimeException('Cannot build a name without repeating a word.');
+            if (null === $name) {
+                throw new \RuntimeException('Cannot build a name without repeating a word.');
             }
 
             if ($attempt > 0) {
-                throw new RuntimeException('The name space is exhausted: it holds a single name.');
+                throw new \RuntimeException('The name space is exhausted: it holds a single name.');
             }
 
             return $name;
@@ -70,33 +69,31 @@ class Generator
         $found = 0;
         $skipped = 0;
 
-        for ($visited = 0; $visited < $size; $visited++) {
+        for ($visited = 0; $visited < $size; ++$visited) {
             $name = $this->compose($pools, $index);
 
-            if ($name !== null) {
+            if (null !== $name) {
                 if ($found === $attempt) {
                     return $name;
                 }
 
-                $found++;
+                ++$found;
                 $skipped = 0;
             } elseif (++$skipped > self::MAX_SKIPS) {
-                throw new RuntimeException('Cannot build a name without repeating a word.');
+                throw new \RuntimeException('Cannot build a name without repeating a word.');
             }
 
             $index = ($index + $step) % $size;
         }
 
-        throw new RuntimeException(
-            sprintf('The name space is exhausted: it holds fewer than %d usable names.', $attempt + 1)
-        );
+        throw new \RuntimeException(sprintf('The name space is exhausted: it holds fewer than %d usable names.', $attempt + 1));
     }
 
     private function step(string $bytes, int $size): int
     {
         $step = 1 + ($this->readIndex($bytes) % ($size - 1));
 
-        while ($this->gcd($step, $size) !== 1) {
+        while (1 !== $this->gcd($step, $size)) {
             $step = $step + 1 >= $size ? 1 : $step + 1;
         }
 
@@ -105,7 +102,7 @@ class Generator
 
     private function gcd(int $a, int $b): int
     {
-        while ($b !== 0) {
+        while (0 !== $b) {
             [$a, $b] = [$b, $a % $b];
         }
 
@@ -114,7 +111,7 @@ class Generator
 
     private function key(int|string|null $id): string
     {
-        if ($id === null) {
+        if (null === $id) {
             return 'r:'.random_bytes(16);
         }
 
@@ -123,9 +120,15 @@ class Generator
 
     private function readIndex(string $bytes): int
     {
-        return unpack('J', $bytes)[1] & PHP_INT_MAX;
+        /** @var array{1: int} $values */
+        $values = unpack('J', $bytes);
+
+        return $values[1] & PHP_INT_MAX;
     }
 
+    /**
+     * @param list<list<string>> $pools
+     */
     private function compose(array $pools, int $index): ?string
     {
         $words = [];
@@ -148,14 +151,17 @@ class Generator
         return implode((string) $this->separator, $words);
     }
 
+    /**
+     * @return list<list<string>>
+     */
     private function pools(): array
     {
-        if ($this->pools !== null) {
+        if (null !== $this->pools) {
             return $this->pools;
         }
 
-        if (!$this->dictionaries) {
-            throw new RuntimeException('Cannot find any dictionary. Please provide at least one position.');
+        if ([] === $this->dictionaries) {
+            throw new \RuntimeException('Cannot find any dictionary. Please provide at least one position.');
         }
 
         $pools = [];
@@ -163,24 +169,21 @@ class Generator
         foreach ($this->dictionaries as $position) {
             $names = is_array($position) ? $position : [$position];
 
-            if (!$names) {
-                throw new RuntimeException('Cannot build a name from an empty position.');
+            if ([] === $names) {
+                throw new \RuntimeException('Cannot build a name from an empty position.');
             }
 
             $words = [];
 
             foreach ($names as $name) {
                 if (!in_array($name, self::AVAILABLE_DICTIONARIES, true)) {
-                    throw new RuntimeException(
-                        sprintf(
-                            'The dictionary %s could not be found. Available dictionaries: %s',
-                            $name,
-                            implode(', ', self::AVAILABLE_DICTIONARIES)
-                        )
-                    );
+                    throw new \RuntimeException(sprintf('The dictionary %s could not be found. Available dictionaries: %s', $name, implode(', ', self::AVAILABLE_DICTIONARIES)));
                 }
 
-                $words = array_merge($words, include __DIR__.'/dictionaries/'.$name.'.php');
+                /** @var list<string> $dictionary */
+                $dictionary = include __DIR__.'/dictionaries/'.$name.'.php';
+
+                $words = array_merge($words, $dictionary);
             }
 
             $pools[] = array_values(array_unique($words));
@@ -197,9 +200,7 @@ class Generator
             $count = count($pool);
 
             if ($size > intdiv(PHP_INT_MAX, $count)) {
-                throw new RuntimeException(
-                    sprintf('The name space exceeds PHP_INT_MAX at position %d. Use fewer positions.', $position + 1)
-                );
+                throw new \RuntimeException(sprintf('The name space exceeds PHP_INT_MAX at position %d. Use fewer positions.', $position + 1));
             }
 
             $size *= $count;
@@ -208,11 +209,17 @@ class Generator
         return $size;
     }
 
+    /**
+     * @return list<string|list<string>>
+     */
     public function getDictionaries(): array
     {
         return $this->dictionaries;
     }
 
+    /**
+     * @param list<string|list<string>> $dictionaries
+     */
     public function setDictionaries(array $dictionaries): self
     {
         $this->dictionaries = $dictionaries;

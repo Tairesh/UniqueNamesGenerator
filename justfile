@@ -21,5 +21,24 @@ shell:
 
 # Reset the vendor volume and rebuild — required after composer.json changes
 rebuild:
-    docker compose down -v
+    docker compose rm -fsv
+    docker compose down -v --remove-orphans
     docker compose build
+
+# Fix code style with PHP CS Fixer
+fixer:
+    docker compose run --rm tests composer fixer
+
+# PHPStan (level max)
+stan:
+    docker compose run --rm tests composer phpstan
+
+# PHPMD
+phpmd:
+    docker compose run --rm tests composer phpmd
+
+# Static analysis only
+lint: stan phpmd
+
+# Style, static analysis and tests
+check: fixer lint test

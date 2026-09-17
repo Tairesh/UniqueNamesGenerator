@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: PHPUnit on PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4', '8.5']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: json
+          coverage: none
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - run: composer test
+
+  lint:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # the lowest supported version, so the fixer never rewrites the code
+      # into syntax that PHP 8.1 cannot parse
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: json
+          coverage: none
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - run: composer phpstan
+
+      - run: composer phpmd
+
+      - run: composer fixer -- --dry-run

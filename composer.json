@@ -28,21 +28,31 @@
         "ext-json": "*"
     },
     "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "pdepend/pdepend": "3.x-dev",
+        "phpmd/phpmd": "3.x-dev",
+        "phpstan/phpstan": "^2.2",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpstan/phpstan-phpunit": "^2.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
         "phpunit/phpunit": "^10.2"
     },
     "autoload": {
         "psr-4": {
-            "Chypriote\\UniqueNames\\": "src",
-            "Chypriote\\UniqueNames\\Tests\\": "tests"
+            "Tairesh\\UniqueNames\\": "src",
+            "Tairesh\\UniqueNames\\Tests\\": "tests"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Chypriote\\UniqueNames\\Tests\\": "tests"
+            "Tairesh\\UniqueNames\\Tests\\": "tests"
         }
     },
     "scripts": {
-        "test": "phpunit"
+        "test": "phpunit",
+        "fixer": "vendor/bin/php-cs-fixer fix --diff --verbose --allow-risky=yes --config=.php-cs-fixer.dist.php",
+        "phpstan": "vendor/bin/phpstan analyse --memory-limit=512M -c phpstan.neon",
+        "phpmd": "vendor/bin/phpmd analyze src tests --format ansi --ruleset phpmd_ruleset.xml"
     },
     "minimum-stability": "dev",
     "prefer-stable": true

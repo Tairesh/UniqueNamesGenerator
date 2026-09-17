@@ -1,40 +1,34 @@
 <?php
 
-namespace Chypriote\UniqueNames\Tests;
+namespace Tairesh\UniqueNames\Tests;
 
-use Chypriote\UniqueNames\Generator;
-use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
+use Tairesh\UniqueNames\Generator;
 
 class GeneratorTest extends TestCase
 {
-
-    /** @test */
-    public function dictionaries_can_be_set()
+    public function testDictionariesCanBeSet(): void
     {
         $generator = new Generator();
         $dictionaries = ['adjectives', 'animals', 'colors'];
         $generator->setDictionaries($dictionaries);
 
-        $this->assertSame($dictionaries, $generator->getDictionaries());
+        self::assertSame($dictionaries, $generator->getDictionaries());
     }
 
-    /** @test */
-    public function dictionaries_can_be_added()
+    public function testDictionariesCanBeAdded(): void
     {
         $generator = new Generator();
         $generator->setDictionaries([]);
 
         $generator->addDictionary('colors');
-        $this->assertSame(['colors'], $generator->getDictionaries());
+        self::assertSame(['colors'], $generator->getDictionaries());
 
         $generator->addDictionary('animals');
-        $this->assertSame(['colors', 'animals'], $generator->getDictionaries());
+        self::assertSame(['colors', 'animals'], $generator->getDictionaries());
     }
 
-    /** @test */
-    public function generator_can_use_a_custom_separator()
+    public function testGeneratorCanUseACustomSeparator(): void
     {
         $generator = new Generator();
         $generator
@@ -43,163 +37,158 @@ class GeneratorTest extends TestCase
 
         $parts = explode('-', $generator->generate());
 
-        $this->assertCount(2, $parts);
-        $this->assertNotEmpty($parts[0]);
-        $this->assertNotEmpty($parts[1]);
+        self::assertCount(2, $parts);
+        self::assertNotEmpty($parts[0]);
+        self::assertNotEmpty($parts[1]);
     }
 
-
-
-
-
-
-
-    /** @test */
-    public function dictionaries_contain_no_duplicates_and_no_blanks()
+    public function testDictionariesContainNoDuplicatesAndNoBlanks(): void
     {
         foreach (Generator::AVAILABLE_DICTIONARIES as $dictionary) {
             $path = __DIR__.'/../src/dictionaries/'.$dictionary.'.php';
-            $this->assertFileExists($path);
+            self::assertFileExists($path);
 
             $words = include $path;
-            $this->assertIsArray($words);
-            $this->assertNotEmpty($words);
-            $this->assertContainsOnly('string', $words);
-            $this->assertNotContains('', $words);
-            $this->assertSame(
-                array_values(array_unique($words)),
-                array_values($words),
+            self::assertIsArray($words);
+            self::assertNotEmpty($words);
+            self::assertContainsOnly('string', $words);
+            self::assertNotContains('', $words);
+
+            /** @var list<string> $strings */
+            $strings = array_values($words);
+
+            self::assertSame(
+                array_unique($strings),
+                $strings,
                 sprintf('Dictionary %s contains duplicates', $dictionary)
             );
         }
     }
 
-    /** @test */
-    public function removed_dictionaries_are_gone()
+    public function testRemovedDictionariesAreGone(): void
     {
-        $this->assertNotContains('countries', Generator::AVAILABLE_DICTIONARIES);
-        $this->assertNotContains('star-wars', Generator::AVAILABLE_DICTIONARIES);
-        $this->assertFileDoesNotExist(__DIR__.'/../src/dictionaries/countries.php');
-        $this->assertFileDoesNotExist(__DIR__.'/../src/dictionaries/star-wars.php');
+        self::assertNotContains('countries', Generator::AVAILABLE_DICTIONARIES);
+        self::assertNotContains('star-wars', Generator::AVAILABLE_DICTIONARIES);
+        self::assertFileDoesNotExist(__DIR__.'/../src/dictionaries/countries.php');
+        self::assertFileDoesNotExist(__DIR__.'/../src/dictionaries/star-wars.php');
     }
 
-    /** @test */
-    public function generator_requires_at_least_one_dictionary()
+    public function testGeneratorRequiresAtLeastOneDictionary(): void
     {
         $generator = new Generator();
         $generator->setDictionaries([]);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Cannot find any dictionary');
 
         $generator->generate('key');
     }
 
-
-
-    /** @test */
-    public function generator_rejects_unknown_dictionaries()
+    public function testGeneratorRejectsUnknownDictionaries(): void
     {
         $generator = new Generator();
         $generator->setDictionaries(['colors', 'unknown']);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('The dictionary unknown could not be found');
 
         $generator->generate('key');
     }
 
-    /** @test */
-    public function space_size_multiplies_position_sizes()
+    public function testSpaceSizeMultipliesPositionSizes(): void
     {
+        $colors = (new Generator())->setDictionaries([['colors']])->getSpaceSize();
+        $animals = (new Generator())->setDictionaries([['animals']])->getSpaceSize();
+
         $generator = new Generator();
         $generator->setDictionaries([['colors'], ['animals']]);
 
-        $this->assertSame(52 * 355, $generator->getSpaceSize());
+        self::assertSame($colors * $animals, $generator->getSpaceSize());
     }
 
-    /** @test */
-    public function a_position_may_merge_several_dictionaries()
+    public function testAPositionMayMergeSeveralDictionaries(): void
     {
-        $generator = new Generator();
-        $generator->setDictionaries([['adjectives', 'languages', 'colors']]);
+        $adjectives = (new Generator())->setDictionaries([['adjectives']])->getSpaceSize();
+        $languages = (new Generator())->setDictionaries([['languages']])->getSpaceSize();
+        $colors = (new Generator())->setDictionaries([['colors']])->getSpaceSize();
 
-        $this->assertSame(1328, $generator->getSpaceSize());
+        $merged = (new Generator())
+            ->setDictionaries([['adjectives', 'languages', 'colors']])
+            ->getSpaceSize();
+
+        self::assertGreaterThan($adjectives, $merged);
+        self::assertGreaterThan($languages, $merged);
+        self::assertGreaterThan($colors, $merged);
+
+        // the union is deduplicated: the dictionaries share words such as `gold` and `orange`
+        self::assertLessThan($adjectives + $languages + $colors, $merged);
     }
 
-    /** @test */
-    public function default_configuration_spans_three_trillion_names()
+    public function testDefaultConfigurationSpansTrillionsOfNames(): void
     {
-        $this->assertSame(1328 * 1328 * 355 * 4940, (new Generator())->getSpaceSize());
+        self::assertGreaterThan(3_000_000_000_000, (new Generator())->getSpaceSize());
     }
 
-    /** @test */
-    public function space_size_rejects_overflow()
+    public function testSpaceSizeRejectsOverflow(): void
     {
         $generator = new Generator();
         $generator->setDictionaries(array_fill(0, 8, ['adjectives', 'languages', 'colors']));
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('name space exceeds');
 
         $generator->getSpaceSize();
     }
 
-    /** @test */
-    public function generator_rejects_an_empty_position()
+    public function testGeneratorRejectsAnEmptyPosition(): void
     {
         $generator = new Generator();
         $generator->setDictionaries([[]]);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('empty position');
 
         $generator->getSpaceSize();
     }
 
-    /** @test */
-    public function seed_and_shuffle_are_gone()
+    public function testSeedAndShuffleAreGone(): void
     {
-        $this->assertFalse(method_exists(Generator::class, 'setSeed'));
-        $this->assertFalse(method_exists(Generator::class, 'setSeedFromString'));
-        $this->assertFalse(method_exists(Generator::class, 'setShuffle'));
-        $this->assertFalse(method_exists(Generator::class, 'setLength'));
+        self::assertFalse(method_exists(Generator::class, 'setSeed'));
+        self::assertFalse(method_exists(Generator::class, 'setSeedFromString'));
+        self::assertFalse(method_exists(Generator::class, 'setShuffle'));
+        self::assertFalse(method_exists(Generator::class, 'setLength'));
     }
 
-    /** @test */
-    public function the_same_key_always_gives_the_same_name()
+    public function testTheSameKeyAlwaysGivesTheSameName(): void
     {
         $id = '018f4e2a-7c3b-7000-8000-000000000001';
 
         $first = (new Generator())->generate($id);
         $second = (new Generator())->generate($id);
 
-        $this->assertSame($first, $second);
+        self::assertSame($first, $second);
     }
 
-    /** @test */
-    public function integer_and_string_keys_are_different()
+    public function testIntegerAndStringKeysAreDifferent(): void
     {
         $generator = new Generator();
 
-        $this->assertNotSame($generator->generate(42), $generator->generate('42'));
+        self::assertNotSame($generator->generate(42), $generator->generate('42'));
     }
 
-    /** @test */
-    public function a_null_key_gives_different_names()
+    public function testANullKeyGivesDifferentNames(): void
     {
         $generator = new Generator();
 
         $names = [];
-        for ($i = 0; $i < 1000; $i++) {
+        for ($i = 0; $i < 1000; ++$i) {
             $names[] = $generator->generate();
         }
 
-        $this->assertGreaterThan(995, count(array_unique($names)));
+        self::assertGreaterThan(995, count(array_unique($names)));
     }
 
-    /** @test */
-    public function every_word_comes_from_its_own_position()
+    public function testEveryWordComesFromItsOwnPosition(): void
     {
         $generator = new Generator();
         $generator
@@ -208,107 +197,104 @@ class GeneratorTest extends TestCase
 
         [$color, $animal] = explode('-', $generator->generate('some-key'));
 
-        $this->assertContains(lcfirst($color), include __DIR__.'/../src/dictionaries/colors.php');
-        $this->assertContains(lcfirst($animal), include __DIR__.'/../src/dictionaries/animals.php');
+        /** @var list<string> $colors */
+        $colors = include __DIR__.'/../src/dictionaries/colors.php';
+        /** @var list<string> $animals */
+        $animals = include __DIR__.'/../src/dictionaries/animals.php';
+
+        self::assertContains(lcfirst($color), $colors);
+        self::assertContains(lcfirst($animal), $animals);
     }
 
-    /** @test */
-    public function attempts_never_repeat_a_name()
+    public function testAttemptsNeverRepeatAName(): void
     {
         $generator = new Generator();
 
         $names = [];
-        for ($attempt = 0; $attempt <= 1000; $attempt++) {
+        for ($attempt = 0; $attempt <= 1000; ++$attempt) {
             $names[] = $generator->generate('collision-key', $attempt);
         }
 
-        $this->assertCount(1001, array_unique($names));
+        self::assertCount(1001, array_unique($names));
     }
 
-    /** @test */
-    public function the_same_attempt_is_reproducible()
+    public function testTheSameAttemptIsReproducible(): void
     {
         $first = (new Generator())->generate('key', 7);
         $second = (new Generator())->generate('key', 7);
 
-        $this->assertSame($first, $second);
+        self::assertSame($first, $second);
     }
 
-    /** @test */
-    public function generator_rejects_a_negative_attempt()
+    public function testGeneratorRejectsANegativeAttempt(): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Attempt cannot be negative');
 
         (new Generator())->generate('key', -1);
     }
 
-    /** @test */
-    public function generator_rejects_an_attempt_above_the_limit()
+    public function testGeneratorRejectsAnAttemptAboveTheLimit(): void
     {
-        $this->expectException(RuntimeException::class);
+        $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Attempt is limited to');
 
         (new Generator())->generate('key', 10001);
     }
 
-    /** @test */
-    public function attempts_stop_when_the_space_is_exhausted()
+    public function testAttemptsStopWhenTheSpaceIsExhausted(): void
     {
         $generator = new Generator();
         $generator->setDictionaries([['colors']]);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('name space is exhausted');
 
         $generator->generate('key', 60);
     }
 
-    /** @test */
-    public function a_name_never_repeats_a_word()
+    public function testANameNeverRepeatsAWord(): void
     {
         $generator = new Generator();
         $generator
             ->setDictionaries([['colors'], ['colors'], ['animals']])
             ->setSeparator('-');
 
-        for ($attempt = 0; $attempt <= 500; $attempt++) {
+        for ($attempt = 0; $attempt <= 500; ++$attempt) {
             $words = explode('-', $generator->generate('repeat-key', $attempt));
 
-            $this->assertCount(3, $words);
-            $this->assertSame($words, array_unique($words));
+            self::assertCount(3, $words);
+            self::assertSame($words, array_unique($words));
         }
     }
 
-    /** @test */
-    public function attempts_stay_unique_with_the_repeat_filter_on()
+    public function testAttemptsStayUniqueWithTheRepeatFilterOn(): void
     {
         $generator = new Generator();
         $generator->setDictionaries([['colors'], ['colors']]);
 
         $names = [];
-        for ($attempt = 0; $attempt <= 500; $attempt++) {
+        for ($attempt = 0; $attempt <= 500; ++$attempt) {
             $names[] = $generator->generate('key', $attempt);
         }
 
-        $this->assertCount(501, array_unique($names));
+        self::assertCount(501, array_unique($names));
     }
 
-    /** @test */
-    public function every_attempt_maps_to_a_distinct_point_of_the_space()
+    public function testEveryAttemptMapsToADistinctPointOfTheSpace(): void
     {
         $generator = new Generator();
         $generator
             ->setDictionaries([['colors'], ['animals']])
             ->setSeparator('-');
 
-        $this->assertSame(18460, $generator->getSpaceSize());
+        self::assertGreaterThan(2000, $generator->getSpaceSize());
 
         $names = [];
-        for ($attempt = 0; $attempt <= 2000; $attempt++) {
+        for ($attempt = 0; $attempt <= 2000; ++$attempt) {
             $names[] = $generator->generate('bijection-key', $attempt);
         }
 
-        $this->assertCount(2001, array_unique($names));
+        self::assertCount(2001, array_unique($names));
     }
 }

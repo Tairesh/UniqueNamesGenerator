@@ -1,6 +1,7 @@
 # Unique Names Generator
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/tairesh/unique-names-generator.svg?style=flat-square)](https://packagist.org/packages/tairesh/unique-names-generator)
+[![CI](https://github.com/Tairesh/UniqueNamesGenerator/actions/workflows/ci.yml/badge.svg)](https://github.com/Tairesh/UniqueNamesGenerator/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Tairesh/UniqueNamesGenerator)](https://github.com/Tairesh/UniqueNamesGenerator/blob/main/LICENSE.md)
 [![Packagist Downloads](https://img.shields.io/packagist/dm/tairesh/unique-names-generator)](https://packagist.org/packages/tairesh/unique-names-generator)
 
@@ -123,12 +124,16 @@ echo $generator->generate('a'); // --> Peach-Meerkat
 The test suite runs in Docker, so nothing has to be installed locally beyond Docker and [just](https://github.com/casey/just):
 
 ``` bash
-just                                              # full suite
-just filter generator_can_shuffle_dictionaries    # a single test
+just                                           # full suite
+just filter testANameNeverRepeatsAWord         # a single test
+just check                                     # PHP CS Fixer, PHPStan, PHPMD and the full suite
 ```
 
-Both wrap `docker compose run --rm tests vendor/bin/phpunit`. With PHP and Composer installed on the host you
-can also run `composer test` directly.
+Every recipe wraps `docker compose run --rm tests`, which in turn runs the matching `composer` script
+(`test`, `fixer`, `phpstan`, `phpmd`). With PHP and Composer installed on the host you can run those
+scripts directly instead.
+
+The container runs PHP 8.1, the lowest supported version. CI runs the suite on 8.1, 8.2, 8.3, 8.4 and 8.5.
 
 
 ## TODO-list
